@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { cookies } from "next/headers";
+import HeaderAuth from "@/components/ui/HeaderAuth";
 
 export default async function HomePage() {
   const cookieStore = await cookies();
@@ -13,15 +14,19 @@ export default async function HomePage() {
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="text-center space-y-8 max-w-2xl">
+        <div className="absolute top-6 right-6">
+          <HeaderAuth />
+        </div>
+
         <h1 className="text-6xl md:text-8xl font-bold tracking-tight">
           <span className="text-white">ARCHIVE</span>
           <span className="text-red-600">CULT</span>
         </h1>
 
         <p className="text-zinc-500 text-sm md:text-base">
-          Underground item-first fashion + culture archive
+          A raw, grunge forum database where items, culture, and clout matter.
           <br />
-          "archivecult"
+          @archive_cult
         </p>
 
         <div className="mt-8 p-6 card max-w-md mx-auto">
