@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <filter id="grain" x="0" y="0" width="100%" height="100%">
+    <!-- Fine monochrome film grain -->
+    <feTurbulence
+      type="fractalNoise"
+      baseFrequency="0.85"
+      numOctaves="3"
+      stitchTiles="stitch"
+      seed="7"
+      result="noise"
+    />
+    <!-- Crush + sharpen grain so it reads as speckle, not fog -->
+    <feColorMatrix type="matrix"
+      values="
+        1 0 0 0 0
+        0 1 0 0 0
+        0 0 1 0 0
+        0 0 0 1.2 -0.1"
+      in="noise"
+      result="contrastNoise"
+    />
+  </filter>
+
+  <!-- Keep opacity low here; control strength mostly in CSS -->
+  <rect width="256" height="256" filter="url(#grain)" opacity="0.08"/>
+</svg>

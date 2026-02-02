@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-zinc-900;
+  }
+
+  body {
+    @apply bg-black text-white font-mono antialiased;
+  }
+
+  ::selection {
+    @apply bg-red-600 text-black;
+  }
+
+  ::-webkit-scrollbar {
+    @apply w-2 bg-black;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-zinc-800 hover:bg-zinc-700;
+  }
+
+  /* Grain overlay */
+  body::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url("/grain.svg");
+    background-repeat: repeat;
+    opacity: 0.03;
+    pointer-events: none;
+    z-index: 9999;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-red-600 hover:bg-red-700 disabled:bg-zinc-800;
+    @apply text-black font-bold px-6 py-3 uppercase tracking-wider;
+    @apply transition-all duration-100;
+    border-radius: 0;
+  }
+
+  .btn-secondary {
+    @apply bg-transparent border-2 border-zinc-700 hover:border-red-600;
+    @apply text-white px-6 py-3 transition-all duration-100;
+    border-radius: 0;
+  }
+
+  .card {
+    @apply border border-zinc-900 bg-surface hover:border-red-600;
+    @apply transition-colors duration-100;
+    border-radius: 0;
+  }
+
+  .input {
+    @apply bg-black border-2 border-zinc-800 text-white px-4 py-3;
+    @apply focus:border-red-600 focus:outline-none font-mono;
+    border-radius: 0;
+  }
+
+  img {
+    filter: contrast(1.1) brightness(0.95);
+    image-rendering: -webkit-optimize-contrast;
+  }
+}
