@@ -21,7 +21,7 @@ export default function HeaderAuth() {
     let mounted = true;
 
     const load = async () => {
-      const { data } = await supabase.auth.getUser(); // verified
+      const { data } = await supabase.auth.getUser();
       if (!mounted) return;
 
       if (!data.user) {
@@ -79,7 +79,9 @@ export default function HeaderAuth() {
 
   if (state.status === "loading") {
     return (
-      <div className="h-10 w-10 rounded-full bg-zinc-800/60 animate-pulse" />
+      <div className="flex items-center gap-2">
+        <div className="h-10 w-10 rounded-full bg-zinc-300 dark:bg-zinc-800/60 animate-pulse" />
+      </div>
     );
   }
 
@@ -87,7 +89,7 @@ export default function HeaderAuth() {
     return (
       <Link
         href="/login"
-        className="text-sm text-zinc-400 hover:text-red-500 transition"
+        className="text-sm text-zinc-600 dark:text-zinc-400 hover:text-red-500 dark:hover:text-red-500 transition"
       >
         Login
       </Link>
@@ -95,29 +97,36 @@ export default function HeaderAuth() {
   }
 
   const initial = (state.username?.[0] || "U").toUpperCase();
+  const displayName = (state.username || "User").toUpperCase();
 
   return (
     <div ref={wrapperRef} className="relative">
-      {/* Emblem button (click to toggle menu) */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="h-10 w-10 rounded-full bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center font-semibold transition"
+        className="flex items-center gap-2 hover:opacity-80 transition"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Account menu"
       >
-        {initial}
+        <div className="h-10 w-10 rounded-full bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 flex items-center justify-center font-semibold transition text-black dark:text-white">
+          {initial}
+        </div>
+        <span className="text-sm font-bold text-black dark:text-white">
+          {displayName}
+        </span>
+        <span className="text-zinc-600 dark:text-zinc-600 text-xs">
+          {open ? "▲" : "▼"}
+        </span>
       </button>
 
-      {/* Dropdown */}
       {open && (
         <div className="absolute right-0 top-full mt-2 w-40 z-50">
-          <div className="card p-2">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-lg p-2">
             <Link
               href="/profile"
               onClick={() => setOpen(false)}
-              className="block px-3 py-2 text-left text-sm text-zinc-200 hover:bg-zinc-800 rounded"
+              className="block px-3 py-2 text-left text-sm text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded"
             >
               Profile
             </Link>
@@ -125,7 +134,7 @@ export default function HeaderAuth() {
             <button
               type="button"
               onClick={handleLogout}
-              className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-zinc-800 rounded"
+              className="w-full text-left px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded"
             >
               Log out
             </button>
