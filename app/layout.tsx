@@ -3,6 +3,7 @@ import "./globals.css";
 import TabNav from "@/components/ui/TabNav";
 import HeaderAuth from "@/components/ui/HeaderAuth";
 import Link from "next/link";
+import ZoomReset from "@/components/ui/ZoomReset";
 
 export const metadata: Metadata = {
   title: "ArchiveCult",
@@ -19,6 +20,7 @@ export default function RootLayout({
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
+      <ZoomReset />
       <body
         className="min-h-screen text-white"
         style={{

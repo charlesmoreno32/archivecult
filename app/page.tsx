@@ -1,9 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
-import { cookies } from "next/headers";
 
 export default async function HomePage() {
-  const cookieStore = await cookies();
-  const supabase = await createClient(cookieStore);
+  const supabase = await createClient();
 
   const { data: tags, error } = await supabase.from("tags").select("count");
   const { data: items } = await supabase.from("items").select("count");

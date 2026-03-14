@@ -1,42 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
-import { cookies } from "next/headers";
+import { notFound } from "next/navigation";
 import Link from "next/link";
-import VoteButtons from "@/components/ui/VoteButtons";
-import CommentForm from "@/components/ui/CommentForm";
-import { formatRelativeTime } from "@/lib/utils";
-
-interface ItemRow {
-  id: string;
-  name: string | null;
-  brand: string | null;
-  category: string | null;
-  description: string | null;
-  price_usd: number | null;
-  buy_link: string | null;
-  hotness_score: number;
-  image_count: number;
-  view_count: number;
-  added_by: string | null;
-  created_at: string;
-}
-
-interface ImageRow {
-  id: string;
-  image_url: string;
-  upvotes: number;
-  downvotes: number;
-  uploaded_by: string | null;
-  created_at: string;
-}
-
-interface CommentRow {
-  id: string;
-  content: string;
-  is_story: boolean;
-  upvotes: number;
-  user_id: string | null;
-  created_at: string;
-}
+import ImageGallery from "@/components/items/ImageGallery";
+import TagDisplay from "@/components/items/TagDisplay";
+import RelatedItems from "@/components/items/RelatedItems";
+import ItemStats from "@/components/items/ItemStats";
 
 export default async function ItemDetailPage({
   params,
@@ -44,351 +12,327 @@ export default async function ItemDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const cookieStore = await cookies();
-  const supabase = await createClient(cookieStore);
+  const supabase = await createClient();
 
-  // Fetch item
-  const { data: item } = await supabase
+  // Get current user
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // Fetch item with all related data
+  const { data: item, error } = await supabase
     .from("items")
     .select(
-      "id, name, brand, category, description, price_usd, buy_link, hotness_score, image_count, view_count, added_by, created_at",
+      `
+      *,
+      profiles:added_by (
+        id,
+        username
+      ),
+      item_images!item_images_item_id_fkey (
+        id,
+        image_url,
+        item_focus,
+        tagged_items,
+        outfit_tags,
+        upvotes,
+        downvotes,
+        relevance_score,
+        is_approved,
+        uploaded_by,
+        created_at,
+        profiles:uploaded_by (
+          username
+        )
+      ),
+      item_tags (
+        tags (
+          id,
+          name,
+          slug,
+          tag_type
+        )
+      )
+    `,
     )
     .eq("id", id)
     .single();
 
-  if (!item) {
-    return (
-      <div
-        className="min-h-screen flex flex-col items-center justify-center px-6"
-        style={{ backgroundColor: "#000000" }}
-      >
-        <p className="text-zinc-600 text-xs tracking-widest mb-2">NOT FOUND</p>
-        <Link
-          href="/items"
-          className="text-xs text-zinc-500 hover:text-white transition-colors duration-100"
-        >
-          ← back to items
-        </Link>
-      </div>
-    );
+  if (error || !item) {
+    console.error("Item not found:", error);
+    notFound();
   }
 
-  const theItem = item as ItemRow;
-
-  // Increment view count (fire and forget)
-  supabase
-    .from("items")
-    .update({ view_count: theItem.view_count + 1 })
-    .eq("id", id);
-
-  // Fetch approved images sorted by vote score
-  const { data: images } = await supabase
-    .from("item_images")
-    .select("id, image_url, upvotes, downvotes, uploaded_by, created_at")
-    .eq("item_id", id)
-    .eq("is_approved", true)
-    .order("upvotes", { ascending: false });
-
-  // Fetch tags
-  const { data: itemTagRows } = await supabase
-    .from("item_tags")
-    .select("tag_id")
+  // Get tag provenance data for this item
+  const { data: tagProvenance } = await supabase
+    .from("tag_provenance")
+    .select(
+      `
+      *,
+      tags (
+        id,
+        name,
+        slug,
+        tag_type
+      )
+    `,
+    )
     .eq("item_id", id);
 
-  const tagIds = (itemTagRows || []).map((r: { tag_id: string }) => r.tag_id);
-  let tags: { id: string; name: string; slug: string }[] = [];
-  if (tagIds.length > 0) {
-    const { data: tagRows } = await supabase
-      .from("tags")
-      .select("id, name, slug")
-      .in("id", tagIds);
-    tags = tagRows || [];
-  }
+  // Helper to get numeric focus level for an image and given item id
+  const getFocusLevel = (img: any, itemId: string) => {
+    try {
+      const entry = img.item_focus?.[itemId];
+      if (!entry) return 0;
+      // entry.level may be number or string
+      return typeof entry.level === "number"
+        ? entry.level
+        : parseInt(entry.level, 10) || 0;
+    } catch {
+      return 0;
+    }
+  };
 
-  // Fetch comments (stories first, then by recency)
-  const { data: comments } = await supabase
-    .from("item_comments")
-    .select("id, content, is_story, upvotes, user_id, created_at")
-    .eq("item_id", id)
-    .order("is_story", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(30);
+  // Separate images by focus (use item_focus instead of primary_item_id)
+  const allImages = (item.item_images || []).filter(
+    (img: any) => img.is_approved,
+  );
 
-  // Get username for the item creator
-  let creatorUsername: string | null = null;
-  if (theItem.added_by) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("username")
-      .eq("id", theItem.added_by)
-      .single();
-    creatorUsername = profile?.username || null;
-  }
+  // Focus images: level >= 3 means primary focus
+  const focusImages = allImages.filter(
+    (img: any) => getFocusLevel(img, id) >= 3,
+  );
 
-  // Get current user's votes on images (for initialUserVote)
-  const { data: session } = await supabase.auth.getSession();
-  let userVotes: Record<string, "up" | "down"> = {};
-  if (session?.user && (images || []).length > 0) {
-    const imageIds = (images as ImageRow[]).map((img) => img.id);
-    const { data: votes } = await supabase
-      .from("image_votes")
-      .select("image_id, vote_type")
-      .eq("user_id", session.user.id)
-      .in("image_id", imageIds);
-    (votes || []).forEach((v: { image_id: string; vote_type: string }) => {
-      userVotes[v.image_id] = v.vote_type as "up" | "down";
-    });
-  }
+  // Also-in images: item appears but not primary (level 1 or 2) OR tagged but not primary
+  const alsoInImages = allImages.filter(
+    (img: any) =>
+      (img.tagged_items?.includes(id) || getFocusLevel(img, id) > 0) &&
+      getFocusLevel(img, id) < 3,
+  );
 
-  // Get comment authors
-  const commentAuthorIds = [
-    ...new Set(
-      (comments || []).map((c: CommentRow) => c.user_id).filter(Boolean),
-    ),
-  ];
-  let authorMap: Record<string, string> = {};
-  if (commentAuthorIds.length > 0) {
-    const { data: authors } = await supabase
-      .from("profiles")
-      .select("id, username")
-      .in("id", commentAuthorIds);
-    (authors || []).forEach((a: { id: string; username: string }) => {
-      authorMap[a.id] = a.username;
-    });
-  }
+  // Sort by relevance score
+  const sortByRelevance = (a: any, b: any) => {
+    const scoreA = (a.relevance_score || 0) + (a.upvotes || 0);
+    const scoreB = (b.relevance_score || 0) + (b.upvotes || 0);
+    return scoreB - scoreA;
+  };
+
+  const sortedFocusImages = [...focusImages].sort(sortByRelevance);
+  const sortedAlsoInImages = [...alsoInImages].sort(sortByRelevance);
+
+  // Primary image (highest relevance from focus images)
+  const primaryImage = sortedFocusImages[0] || sortedAlsoInImages[0] || null;
+
+  // Separate manual vs propagated tags
+  const manualTags = (item.item_tags || [])
+    .map((it: any) => it.tags)
+    .filter(Boolean);
+
+  const propagatedTags = (tagProvenance || [])
+    .filter((tp: any) => tp.source === "propagated")
+    .map((tp: any) => ({
+      ...tp.tags,
+      confidence: tp.confidence,
+      occurrence_count: tp.occurrence_count,
+      total_item_appearances: tp.total_item_appearances,
+      upvotes: tp.upvotes,
+      downvotes: tp.downvotes,
+    }));
+
+  // Calculate tier
+  const calculateTier = (clout: number): string => {
+    if (clout <= 150) return "ATOMIC";
+    if (clout <= 600) return "STABLE";
+    if (clout <= 1500) return "HYPE";
+    return "PEAK";
+  };
+
+  const tier = calculateTier(item.current_clout || 0);
+  const tierColors: Record<string, string> = {
+    ATOMIC: "text-gray-500 border-gray-700",
+    STABLE: "text-[#4A7C59] border-[#4A7C59]",
+    HYPE: "text-red-500 border-red-500",
+    PEAK: "text-red-700 border-red-700",
+  };
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: "#000000" }}>
-      {/* Back nav */}
-      <div
-        className="px-3 py-2 border-b border-zinc-800"
-        style={{ backgroundColor: "#0a0a0a" }}
-      >
-        <Link
-          href="/items"
-          className="text-zinc-600 text-xs hover:text-white transition-colors duration-100"
-        >
-          ← ITEMS
-        </Link>
+    <div className="min-h-screen bg-black text-white">
+      {/* Header */}
+      <div className="border-b border-zinc-800 px-4 py-4">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <Link
+            href="/items"
+            className="text-xs text-zinc-600 hover:text-white transition-colors font-mono"
+          >
+            ← BACK TO ITEMS
+          </Link>
+
+          <Link
+            href={`/items/upload/step-2-upload-photo?itemId=${id}`}
+            className="px-4 py-2 bg-[#4A7C59] text-white font-mono text-xs hover:bg-[#3d6649] transition-colors"
+          >
+            {focusImages.length > 0
+              ? "+ UPLOAD PHOTO"
+              : "📸 BE FIRST TO UPLOAD"}
+          </Link>
+        </div>
       </div>
 
-      {/* Image gallery */}
-      {(images || []).length > 0 ? (
-        <div className="space-y-0">
-          {(images as ImageRow[]).map((img, idx) => (
-            <div key={img.id} style={{ borderBottom: "1px solid #1a1a1a" }}>
-              {/* Image */}
-              <div
-                className="w-full relative"
-                style={{ backgroundColor: "#050505" }}
-              >
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        {/* Top Section: Image + Info */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
+          {/* Left: Primary Image */}
+          <div>
+            {primaryImage ? (
+              <div className="aspect-square relative overflow-hidden bg-zinc-950 border-2 border-zinc-800 rounded-xl">
                 <img
-                  src={img.image_url}
-                  alt={`${theItem.name || "item"} photo ${idx + 1}`}
-                  className="w-full"
-                  style={{ filter: "contrast(1.05) brightness(0.9)" }}
-                  loading={idx === 0 ? "eager" : "lazy"}
+                  src={primaryImage.image_url}
+                  alt={item.name}
+                  className="w-full h-full object-cover"
                 />
-                {/* Scanlines */}
-                <div
-                  className="absolute inset-0 pointer-events-none"
-                  style={{
-                    background:
-                      "repeating-linear-gradient(0deg, rgba(0,0,0,0.06) 0px, rgba(0,0,0,0.06) 1px, transparent 1px, transparent 3px)",
-                  }}
-                />
+                {/* Image stats overlay */}
+                <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black to-transparent">
+                  <div className="flex items-center gap-3 text-xs font-mono text-zinc-400">
+                    <span>↑ {primaryImage.upvotes || 0}</span>
+                    <span>↓ {primaryImage.downvotes || 0}</span>
+                    {primaryImage.profiles?.username && (
+                      <span className="ml-auto">
+                        by @{primaryImage.profiles.username}
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
+            ) : (
+              <div className="aspect-square bg-zinc-950 border-2 border-dashed border-zinc-800 rounded-xl flex items-center justify-center">
+                <div className="text-center">
+                  <div className="text-6xl mb-4 opacity-20">📦</div>
+                  <div className="text-zinc-600 font-mono text-sm mb-4">
+                    NO IMAGES YET
+                  </div>
+                  <Link
+                    href={`/items/upload/step-2-upload-photo?itemId=${id}`}
+                    className="px-6 py-3 bg-[#4A7C59] text-white font-mono text-xs hover:bg-[#3d6649] transition-colors inline-block"
+                  >
+                    BE FIRST TO UPLOAD
+                  </Link>
+                </div>
+              </div>
+            )}
+          </div>
 
-              {/* Vote bar */}
-              <div
-                className="flex items-center justify-between px-3 py-1.5"
-                style={{ backgroundColor: "#0a0a0a" }}
+          {/* Right: Item Info */}
+          <div>
+            {/* Title & Brand */}
+            <div className="mb-6">
+              <h1 className="text-4xl font-mono font-bold tracking-tight mb-2">
+                {item.name}
+              </h1>
+              {item.brand && (
+                <div className="text-xl text-zinc-400 font-mono">
+                  {item.brand}
+                </div>
+              )}
+              {item.category && (
+                <div className="text-sm text-zinc-600 font-mono mt-1">
+                  {item.category}
+                </div>
+              )}
+            </div>
+
+            {/* Stats Grid */}
+            <ItemStats
+              currentClout={item.current_clout || 0}
+              peakClout={item.peak_clout || 0}
+              tier={tier}
+              imageCount={allImages.length}
+              viewCount={item.view_count || 0}
+              tierColors={tierColors}
+            />
+
+            {/* Description */}
+            {item.description && (
+              <div className="mb-6 p-4 bg-zinc-950 border border-zinc-800 rounded-lg">
+                <div className="text-sm text-zinc-300 font-mono leading-relaxed">
+                  {item.description}
+                </div>
+              </div>
+            )}
+
+            {/* Price Range */}
+            {item.min_price_usd && (
+              <div className="mb-6 p-4 bg-zinc-950 border border-zinc-800 rounded-lg">
+                <div className="text-xs text-zinc-600 font-mono mb-1">
+                  PRICE RANGE
+                </div>
+                <div className="text-lg font-mono text-white">
+                  ${item.min_price_usd}
+                  {item.max_price_usd &&
+                  item.max_price_usd !== item.min_price_usd
+                    ? ` - $${item.max_price_usd}`
+                    : ""}
+                </div>
+              </div>
+            )}
+
+            {/* Layer 1 & 2 Tags */}
+            <TagDisplay
+              itemId={id}
+              manualTags={manualTags}
+              propagatedTags={propagatedTags}
+              userId={user?.id}
+            />
+
+            {/* Buy Link */}
+            {item.buy_link && (
+              <a
+                href={item.buy_link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block w-full py-3 bg-white text-black font-mono text-sm text-center hover:bg-zinc-200 transition-colors rounded mt-4"
               >
-                <VoteButtons
-                  imageId={img.id}
-                  initialUpvotes={img.upvotes}
-                  initialDownvotes={img.downvotes}
-                  initialUserVote={userVotes[img.id] || null}
-                />
-                <span className="text-xs text-zinc-700">
-                  {formatRelativeTime(img.created_at)}
+                BUY NOW →
+              </a>
+            )}
+
+            {/* Added By */}
+            <div className="mt-6 pt-6 border-t border-zinc-800">
+              <div className="text-xs text-zinc-600 font-mono">
+                Added by{" "}
+                <span className="text-white">
+                  @{item.profiles?.username || "unknown"}
                 </span>
+                {" · "}
+                {new Date(item.created_at).toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
               </div>
             </div>
-          ))}
-        </div>
-      ) : (
-        <div
-          className="w-full flex items-center justify-center"
-          style={{ height: "200px", backgroundColor: "#050505" }}
-        >
-          <span className="text-zinc-800 text-xs tracking-widest uppercase">
-            {theItem.category || "no photos yet"}
-          </span>
-        </div>
-      )}
-
-      {/* Item info */}
-      <div className="px-3 py-4 border-t border-zinc-800">
-        {/* Name + brand */}
-        <div className="flex items-baseline gap-2">
-          <h1
-            className="text-lg font-bold text-white"
-            style={{ letterSpacing: "-0.5px" }}
-          >
-            {theItem.name || "Untitled"}
-          </h1>
-          {theItem.brand && (
-            <span className="text-xs text-zinc-500">{theItem.brand}</span>
-          )}
-        </div>
-
-        {/* Category badge */}
-        {theItem.category && (
-          <span
-            className="inline-block mt-1 px-2 py-0.5 text-xs text-zinc-500 border border-zinc-800"
-            style={{ borderRadius: 0 }}
-          >
-            {theItem.category.toUpperCase()}
-          </span>
-        )}
-
-        {/* Description */}
-        {theItem.description && (
-          <p className="text-xs text-zinc-400 mt-3 leading-relaxed">
-            {theItem.description}
-          </p>
-        )}
-
-        {/* Price + buy link row */}
-        <div className="flex items-center gap-4 mt-3">
-          {theItem.price_usd && (
-            <span className="text-sm font-bold text-white">
-              ${theItem.price_usd.toFixed(2)}
-            </span>
-          )}
-          {theItem.buy_link && (
-            <a
-              href={theItem.buy_link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs font-bold tracking-wide transition-colors duration-100 hover:opacity-70"
-              style={{ color: "#4A7C59" }}
-            >
-              BUY →
-            </a>
-          )}
-        </div>
-
-        {/* Tags */}
-        {tags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-3">
-            {tags.map((tag) => (
-              <Link
-                key={tag.id}
-                href={`/tags/${tag.slug}`}
-                className="text-xs px-2 py-0.5 border border-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-white transition-colors duration-100"
-                style={{ borderRadius: 0 }}
-              >
-                #{tag.name}
-              </Link>
-            ))}
           </div>
-        )}
-
-        {/* Meta */}
-        <div className="flex items-center gap-3 mt-4 pt-3 border-t border-zinc-800">
-          <span className="text-xs text-zinc-700">
-            added by {creatorUsername ? `@${creatorUsername}` : "someone"}
-          </span>
-          <span className="text-xs text-zinc-700">·</span>
-          <span className="text-xs text-zinc-700">
-            {formatRelativeTime(theItem.created_at)}
-          </span>
-          <span className="text-xs text-zinc-700">·</span>
-          <span className="text-xs text-zinc-700">
-            {theItem.view_count + 1} views
-          </span>
         </div>
 
-        {/* Upload photo CTA */}
-        <Link
-          href={`/upload?item=${id}`}
-          className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 border border-zinc-800 text-xs text-zinc-500 hover:border-zinc-600 hover:text-white transition-colors duration-100"
-          style={{ borderRadius: 0 }}
-        >
-          📸 ADD PHOTO
-        </Link>
-      </div>
+        {/* Image Gallery Sections */}
+        <ImageGallery
+          focusImages={sortedFocusImages}
+          alsoInImages={sortedAlsoInImages}
+          itemName={item.name}
+          userId={user?.id}
+        />
 
-      {/* Comments section */}
-      <div className="border-t border-zinc-800">
-        <div className="px-3 py-2" style={{ backgroundColor: "#0a0a0a" }}>
-          <span className="text-xs font-bold text-zinc-400 tracking-widest">
-            COMMENTS & STORIES
-          </span>
-        </div>
+        {/* Related Items (Co-occurrence) */}
+        <RelatedItems itemId={id} currentItemName={item.name} />
 
-        {/* Comment form */}
-        <div className="px-3 py-3">
-          <CommentForm itemId={id} />
-        </div>
-
-        {/* Comment list */}
-        {(comments || []).length > 0 ? (
-          <div className="divide-y" style={{ borderColor: "#1a1a1a" }}>
-            {(comments as CommentRow[]).map((comment) => (
-              <div
-                key={comment.id}
-                className="px-3 py-3"
-                style={{
-                  borderLeft: comment.is_story
-                    ? "3px solid #4A7C59"
-                    : undefined,
-                  backgroundColor: comment.is_story ? "#0a120a" : "transparent",
-                }}
-              >
-                {/* Author + time + story badge */}
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-bold text-zinc-300">
-                    {comment.user_id
-                      ? `@${authorMap[comment.user_id] || "unknown"}`
-                      : "anonymous"}
-                  </span>
-                  {comment.is_story && (
-                    <span
-                      className="text-xs font-bold px-1.5 py-0.5"
-                      style={{
-                        color: "#4A7C59",
-                        border: "1px solid #4A7C59",
-                        borderRadius: 0,
-                      }}
-                    >
-                      STORY
-                    </span>
-                  )}
-                  <span className="text-xs text-zinc-700">
-                    {formatRelativeTime(comment.created_at)}
-                  </span>
-                </div>
-                <p className="text-xs text-zinc-400 leading-relaxed">
-                  {comment.content}
-                </p>
-                {comment.upvotes > 0 && (
-                  <span className="text-xs text-zinc-700 mt-1 inline-block">
-                    ▲ {comment.upvotes}
-                  </span>
-                )}
-              </div>
-            ))}
+        {/* Comments Section - Placeholder */}
+        <div className="mt-12 pt-12 border-t border-zinc-800">
+          <h2 className="text-xl font-mono font-bold mb-4">COMMENTS</h2>
+          <div className="p-8 bg-zinc-950 border border-zinc-800 rounded-lg text-center">
+            <div className="text-zinc-600 font-mono text-sm">
+              Comments coming soon...
+            </div>
           </div>
-        ) : (
-          <div className="px-3 py-4">
-            <p className="text-xs text-zinc-700">
-              No comments yet. Be the first.
-            </p>
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );

@@ -6,6 +6,12 @@ export default function TabNav() {
   return (
     <nav className="flex gap-4">
       <Link
+        href="/outfits"
+        className="text-sm text-zinc-400 hover:text-red-500 transition"
+      >
+        Outfits
+      </Link>
+      <Link
         href="/items"
         className="text-sm text-zinc-400 hover:text-red-500 transition"
       >
