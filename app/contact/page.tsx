@@ -10,13 +10,13 @@ export default function ContactPage() {
           </h1>
           <div className="mt-3 h-px w-12 bg-zinc-400" />
           <p className="mt-6 text-sm text-black leading-relaxed">
-            Send me an email with any questions.
+            Feel free to send emails with any questions.
           </p>
           <p className="mt-2 text-sm text-zinc-600">
             Business, collaborations, or general inquiries.
           </p>
           <p className="mt-6 text-sm font-medium text-black">
-            email@domain.com
+            archivecult@outlook.com
           </p>
           <p className="mt-2 text-xs text-zinc-500 uppercase tracking-wide">
             Replies may take time
